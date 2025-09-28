@@ -1,11 +1,14 @@
 import os
 
 os.environ['KERAS_BACKEND'] = 'jax'
-os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
+os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.5'
 
+import argparse
+import random
 from math import cos, pi
 
 import keras
+import numpy as np
 from data import get_data_and_mask
 from hgq.utils.sugar import BetaScheduler, Dataset, FreeEBOPs, ParetoFront, PBar, PieceWiseSchedule
 from keras.callbacks import LearningRateScheduler
@@ -50,19 +53,26 @@ def cosine_decay_restarts_schedule(
 
 
 if __name__ == '__main__':
-    (X_train, y_train), (X_val, y_val), (X_test, y_test), (mask12, mask13, mask23) = get_data_and_mask(
-        '/home/calad/repo/FHQ-demos2/tgc/data/fake_TGC_0.041_pruned.h5'
-    )
+    np.random.seed(42)
+    random.seed(42)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--input', '-i', type=str, required=True, help='Path to the training data file (.h5)')
+    parser.add_argument('--output', '-o', type=str, required=True, help='Output directory for saving results')
+    args = parser.parse_args()
 
+    (X_train, y_train), (X_val, y_val), (X_test, y_test), (mask12, mask13, mask23) = get_data_and_mask(args.input)
+
+    X_train = [x.astype('float16') for x in X_train]
+    X_val = [x.astype('float16') for x in X_val]
     dataset_train = Dataset(X_train, y_train, 51200, 'gpu:0')
-    dataset_test = Dataset(X_train, y_train, 51200, 'gpu:0')
+    dataset_val = Dataset(X_val, y_val, 51200, 'gpu:0')
 
     model = get_model_hgq(mask12, mask13, mask23, 8, 8)
 
     pbar = PBar('loss: {loss:.2f}/{val_loss:.2f} - res: {res:.2f}/{val_res:.2f} - lr: {learning_rate:.2e} - beta: {beta:.1e}')
     ebops = FreeEBOPs()
     pareto = ParetoFront(
-        '/tmp/tgc_scan_test2',
+        args.output,
         ['val_res', 'ebops'],
         [-1, -1],
         fname_format='epoch={epoch}-val_res={val_res:.3f}-ebops={ebops}-mse={val_loss:.3f}.keras',
@@ -75,4 +85,4 @@ if __name__ == '__main__':
     metrics = [Resolution(name='res')]
     model.compile(optimizer=opt, loss='mse', metrics=metrics, steps_per_execution=4)
 
-    model.fit(dataset_train, epochs=60000, validation_data=dataset_test, callbacks=callbacks, verbose=0)  # type: ignore
+    model.fit(dataset_train, epochs=60000, validation_data=dataset_val, callbacks=callbacks, verbose=0)  # type: ignore

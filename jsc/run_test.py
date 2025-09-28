@@ -10,19 +10,14 @@ from pathlib import Path
 
 import keras
 import numpy as np
-from data import get_data_and_mask
+from da4ml.trace import HWConfig
+from data import get_data
 from test_utils import convert_and_test, trace_and_save
 from tqdm import tqdm
 
 
-def std_cutoff_30(theta_true, theta_pred):
-    diff = theta_true.ravel() - theta_pred.ravel()
-    mask = np.abs(diff) < 30
-    return float(np.sqrt(np.mean(diff[mask] ** 2))), float(np.mean(mask))
-
-
-def worker(model_path: str, args, ds_test_path: str):
-    (X_train, _), (X_val, _), (X_test, y_test), (mask12, mask13, mask23) = get_data_and_mask(ds_test_path)
+def worker(model_path: str, args, ds_test_path: str, src: str):
+    (X_train, _), (X_val, _), (X_test, y_test) = get_data(ds_test_path, src=src)
     ds_test = (X_test, y_test)
 
     out_path = Path(args.output) / Path(model_path).stem
@@ -35,13 +30,14 @@ def worker(model_path: str, args, ds_test_path: str):
         'tgcnn',
         out_path,
         ds_test,
-        std_cutoff_30,
+        lambda x, y: np.mean(np.argmax(y, axis=-1) == x),
         sw_test=not args.no_sw_test,
         hw_test=not args.no_hw_test,
         solver_options={'hard_dc': 2},
-        clock_period=6.25,
+        clock_period=1,
         clock_uncertainty=0.0,
-        latency_cutoff=12,  # 11
+        latency_cutoff=1,
+        hw_config=HWConfig(1, -1, -1),
     )
 
 
@@ -50,6 +46,7 @@ if __name__ == '__main__':
     parser.add_argument('--input', '-i', type=str, required=True, help='Path to the trained models')
     parser.add_argument('--output', '-o', type=str, required=True, help='Path for the converted models')
     parser.add_argument('--data', '-d', type=str, required=True, help='Path to the data file')
+    parser.add_argument('--cern-box', action='store_true', help='Whether the input path is on cernbox')
     parser.add_argument('--no-sw-test', action='store_true', help='Whether to **not** perform software test')
     parser.add_argument('--no-hw-test', action='store_true', help='Whether to **not** perform hardware test')
     parser.add_argument('--jobs', '-j', type=int, default=-1, help='Number of parallel jobs')
@@ -61,7 +58,7 @@ if __name__ == '__main__':
     print(f'Found {len(model_paths)} models, Using {args.jobs} parallel jobs')
 
     def _worker(x):
-        return worker(x, args, args.data)
+        return worker(x, args, args.data, src='cernbox' if args.cern_box else 'openml')
 
     with Pool(args.jobs) as p:
         list(tqdm(p.imap_unordered(_worker, model_paths), total=len(model_paths)))
