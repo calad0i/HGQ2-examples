@@ -30,7 +30,6 @@ def convert_and_test(
     metric: Callable[[np.ndarray, np.ndarray], float | Sequence[float]] | None,
     sw_test: bool,
     hw_test: bool,
-    hls4ml: bool = False,
     hw_config: HWConfig = HWConfig(1, 8, -1),
     latency_cutoff=8,
     solver_options: solver_options_t | None = None,
@@ -60,7 +59,6 @@ def convert_and_test(
 
     if not ds_test:
         return
-
     assert metric is not None, 'Metric must be provided if ds_test is given'
     y_true = ds_test[1]
 
@@ -74,9 +72,6 @@ def convert_and_test(
             json.dump(misc, f)
 
     if hw_test:
-        with open(path / 'misc.json') as f:
-            misc = json.load(f)
-
         for _ in range(8):
             try:
                 rtl._compile(openmp=False, nproc=4)
@@ -85,9 +80,9 @@ def convert_and_test(
                 pass
 
         y_pred_hw = rtl.predict(ds_test[0])
-        metric_hw = metric(y_true, y_pred_hw)
+        res_hw = metric(y_true, y_pred_hw)
 
-        misc['hw_metric'] = metric_hw
+        misc['hw_metric'] = res_hw
 
         with open(Path(path) / 'misc.json', 'w') as f:
             json.dump(misc, f)
@@ -96,19 +91,8 @@ def convert_and_test(
             ndiff = np.sum(y_pred_hw != y_pred)  # type: ignore
             if ndiff > 0:
                 print(f'Number of different predictions: {ndiff} / {y_pred.size}')  # type: ignore
-                print(f'HW/SW metrics: {res} / {metric_hw}')  # type: ignore
+                print(f'HW/SW metrics: {res} / {res_hw}')  # type: ignore
 
             misc['hw_sw_diff'] = float(ndiff) / float(y_pred.size)  # type: ignore
             with open(Path(path) / 'misc.json', 'w') as f:
                 json.dump(misc, f)
-
-    if hls4ml:
-        path.mkdir(parents=True, exist_ok=True)
-        from hls4ml.converters import convert_from_keras_model
-
-        model_hls = convert_from_keras_model(model, output_dir=str(path), clock_uncertainty=0, clock_period=1.0, backend='vitis')
-        model_hls.compile()
-        y_pred_hls: np.ndarray = model_hls.predict(ds_test[0])  # type: ignore
-        metric_hls = metric(y_true, y_pred_hls)
-        with open(Path(path) / 'metric.json', 'w') as f:
-            f.write(f'{{"hls4ml_metric": {metric_hls}}}')
