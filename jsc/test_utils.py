@@ -31,10 +31,10 @@ def convert_and_test(
     sw_test: bool,
     hw_test: bool,
     hls4ml: bool = False,
-    hw_config: HWConfig = HWConfig(1, 8, -1),
-    latency_cutoff=8,
+    hw_config: HWConfig = HWConfig(1, -1, -1),
+    latency_cutoff=1,
     solver_options: solver_options_t | None = None,
-    clock_period: float = 5.0,
+    clock_period: float = 1.0,
     clock_uncertainty: float = 0.0,
 ):
     path = Path(path)
@@ -84,7 +84,7 @@ def convert_and_test(
             except RuntimeError:
                 pass
 
-        y_pred_hw = rtl.predict(ds_test[0])
+        y_pred_hw = rtl.predict(np.array(model.layers[1].iq(ds_test[0])))
         metric_hw = metric(y_true, y_pred_hw)
 
         misc['hw_metric'] = metric_hw

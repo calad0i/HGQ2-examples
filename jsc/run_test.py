@@ -39,10 +39,10 @@ def worker(model_path: str, args, ds_test_path: str, src: str):
         hw_test=not args.no_hw_test,
         hls4ml=args.hls4ml,
         solver_options={'hard_dc': 2},
-        clock_period=1.9,
+        clock_period=1,
         clock_uncertainty=0.0,
-        latency_cutoff=5,
-        hw_config=HWConfig(1, 8, -1),
+        latency_cutoff=1,
+        hw_config=HWConfig(1, -1, -1),
     )
 
 
