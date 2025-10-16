@@ -38,6 +38,7 @@ def worker(model_path: str, args, ds_test_path: str, src: str):
         sw_test=not args.no_sw_test,
         hw_test=not args.no_hw_test,
         hls4ml=args.hls4ml,
+        hls4ml_da=args.hls4ml_da,
         solver_options={'hard_dc': 2},
         clock_period=1,
         clock_uncertainty=0.0,
@@ -55,6 +56,7 @@ if __name__ == '__main__':
     parser.add_argument('--no-sw-test', action='store_true', help='Whether to **not** perform software test')
     parser.add_argument('--no-hw-test', action='store_true', help='Whether to **not** perform hardware test')
     parser.add_argument('--hls4ml', action='store_true', help='Whether to do hls4ml conversion')
+    parser.add_argument('--hls4ml-da', action='store_true', help='Whether to do hls4ml conversion with DA')
     parser.add_argument('--jobs', '-j', type=int, default=-1, help='Number of parallel jobs')
     args = parser.parse_args()
 

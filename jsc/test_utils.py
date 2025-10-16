@@ -31,6 +31,7 @@ def convert_and_test(
     sw_test: bool,
     hw_test: bool,
     hls4ml: bool = False,
+    hls4ml_da: bool = False,
     hw_config: HWConfig = HWConfig(1, -1, -1),
     latency_cutoff=1,
     solver_options: solver_options_t | None = None,
@@ -107,6 +108,20 @@ def convert_and_test(
         from hls4ml.converters import convert_from_keras_model
 
         model_hls = convert_from_keras_model(model, output_dir=str(path), clock_uncertainty=0, clock_period=1.0, backend='vitis')
+        model_hls.compile()
+        y_pred_hls: np.ndarray = model_hls.predict(ds_test[0])  # type: ignore
+        metric_hls = metric(y_true, y_pred_hls)
+        with open(Path(path) / 'metric.json', 'w') as f:
+            f.write(f'{{"hls4ml_metric": {metric_hls}}}')
+
+    if hls4ml_da:
+        path.mkdir(parents=True, exist_ok=True)
+        from hls4ml.converters import convert_from_keras_model
+
+        hls_config = {'Model': {'Strategy': 'distributed_arithmetic', 'ReuseFactor': 1, 'Precision': 'fixed<-1,0>'}}
+        model_hls = convert_from_keras_model(
+            model, output_dir=str(path), clock_uncertainty=0, clock_period=1.0, backend='vitis', hls_config=hls_config
+        )
         model_hls.compile()
         y_pred_hls: np.ndarray = model_hls.predict(ds_test[0])  # type: ignore
         metric_hls = metric(y_true, y_pred_hls)
