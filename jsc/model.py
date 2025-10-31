@@ -1,6 +1,6 @@
 import keras
-from hgq.config import QuantizerConfigScope
-from hgq.layers import QDense, QEinsumDenseBatchnorm
+from hgq.config import QuantizerConfig, QuantizerConfigScope
+from hgq.layers import QDense, QDenseT, QEinsumDenseBatchnorm
 
 
 def get_model_hgq(init_bw_k=3, init_bw_a=3):
@@ -15,4 +15,15 @@ def get_model_hgq(init_bw_k=3, init_bw_a=3):
         out = QEinsumDenseBatchnorm('bc,cC->bC', 32, name='t3', bias_axes='C', activation='relu')(out)
         out = QDense(5, name='out')(out)
 
+    return keras.Model(inp, out)
+
+
+def get_model_hgqt(init_bw=10, init_int=2):
+    with QuantizerConfigScope(k0=1, b0=init_bw, i0=init_int):
+        iq_conf = QuantizerConfig(place='datalane')
+        with QuantizerConfigScope(place='table', homogeneous_axis=(0,)):
+            inp = keras.layers.Input((16,))
+            out = keras.layers.BatchNormalization()(inp)
+            out = QDenseT(8, 1, 8, 'tanh', iq_conf=iq_conf)(inp)
+            out = QDenseT(5, 1, 8, 'tanh')(out)
     return keras.Model(inp, out)

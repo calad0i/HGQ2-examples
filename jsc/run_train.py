@@ -12,7 +12,10 @@ import numpy as np
 from data import get_data
 from hgq.utils.sugar import BetaScheduler, Dataset, FreeEBOPs, ParetoFront, PBar, PieceWiseSchedule
 from keras.callbacks import LearningRateScheduler
-from model import get_model_hgq
+from model import get_model_hgq, get_model_hgqt
+
+np.random.seed(42)
+random.seed(42)
 
 
 def cosine_decay_restarts_schedule(
@@ -41,6 +44,7 @@ if __name__ == '__main__':
     parser.add_argument('--input', '-i', type=str, required=True, help='Path to the training data file (.h5)')
     parser.add_argument('--output', '-o', type=str, required=True, help='Output directory for saving results')
     parser.add_argument('--cern-box', action='store_true', help='Whether the input data is from CERNBox')
+    parser.add_argument('--model', '-m', type=str, choices=['hgq', 'hgqt'], default='hgq', help='Model type to use')
     args = parser.parse_args()
 
     src = 'openml' if not args.cern_box else 'cernbox'
@@ -50,7 +54,10 @@ if __name__ == '__main__':
     dataset_train = Dataset(X_train, y_train, 33200, 'gpu:0')
     dataset_val = Dataset(X_val, y_val, 33200, 'gpu:0')
 
-    model = get_model_hgq(3, 3)
+    if args.model == 'hgqt':
+        model = get_model_hgq(3, 3)
+    else:
+        model = get_model_hgqt(10, 2)
 
     pbar = PBar(
         'loss: {loss:.2f}/{val_loss:.2f} - acc: {accuracy:.4f}/{val_accuracy:.4f} - lr: {learning_rate:.2e} - beta: {beta:.1e}'
