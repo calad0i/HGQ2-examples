@@ -47,7 +47,7 @@ def convert_and_test(
     )
     rtl.write()
 
-    with open(path / 'misc.json') as f:
+    with open(path / 'metadata.json') as f:
         misc = json.load(f)
 
     ebops = 0
@@ -56,7 +56,7 @@ def convert_and_test(
             ebops += int(layer.ebops)  # type: ignore
 
     misc['ebops'] = ebops
-    with open(path / 'misc.json', 'w') as f:
+    with open(path / 'metadata.json', 'w') as f:
         json.dump(misc, f)
 
     if not ds_test:
@@ -68,14 +68,17 @@ def convert_and_test(
     if sw_test:
         y_pred = model.predict(ds_test[0], batch_size=25600, verbose=0)  # type: ignore
         res = metric(y_true, y_pred)
+        c_pred = comb.predict(ds_test[0], n_threads=4)
+        c_res = metric(y_true, c_pred)
 
         misc['keras_metric'] = res
+        misc['comb_metric'] = c_res
 
-        with open(path / 'misc.json', 'w') as f:
+        with open(path / 'metadata.json', 'w') as f:
             json.dump(misc, f)
 
     if hw_test:
-        with open(path / 'misc.json') as f:
+        with open(path / 'metadata.json') as f:
             misc = json.load(f)
 
         for _ in range(8):
@@ -85,22 +88,28 @@ def convert_and_test(
             except RuntimeError:
                 pass
 
-        y_pred_hw = rtl.predict(np.array(model.layers[1].iq(ds_test[0])))
+        y_pred_hw = rtl.predict(np.array(ds_test[0]))
         metric_hw = metric(y_true, y_pred_hw)
 
         misc['hw_metric'] = metric_hw
 
-        with open(Path(path) / 'misc.json', 'w') as f:
+        with open(Path(path) / 'metadata.json', 'w') as f:
             json.dump(misc, f)
 
         if sw_test:
+            if np.any(y_pred_hw != c_pred):  # type: ignore
+                print('HW/SW predictions differ!')
+                print(f'Number of different predictions: {np.sum(y_pred_hw != c_pred)} / {y_pred_hw.size}')  # type: ignore
+                print(f'HW/SW metrics: {metric_hw} / {c_res}')  # type: ignore
+                raise RuntimeError('HW/SW predictions differ!')
+
             ndiff = np.sum(y_pred_hw != y_pred)  # type: ignore
             if ndiff > 0:
                 print(f'Number of different predictions: {ndiff} / {y_pred.size}')  # type: ignore
                 print(f'HW/SW metrics: {res} / {metric_hw}')  # type: ignore
 
             misc['hw_sw_diff'] = float(ndiff) / float(y_pred.size)  # type: ignore
-            with open(Path(path) / 'misc.json', 'w') as f:
+            with open(Path(path) / 'metadata.json', 'w') as f:
                 json.dump(misc, f)
 
     if hls4ml:
