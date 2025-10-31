@@ -65,11 +65,11 @@ def parse_utilization(utilization: str):
 def load_project(path):
     try:
         path = Path(path)
-        build_tcl_path = path / 'build_prj.tcl'
+        build_tcl_path = path / 'build_vivado_prj.tcl'
         assert build_tcl_path.exists(), f'build_prj.tcl not found in {path}'
         top_name = build_tcl_path.read_text().split('"', 2)[1]
 
-        with open(path / f'{top_name}.xdc') as f:
+        with open(path / f'src/{top_name}.xdc') as f:
             target_clock_period = float(f.readline().strip().split()[2])
         with open(path / 'misc.json') as f:
             misc = json.load(f)
