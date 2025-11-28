@@ -23,7 +23,6 @@ def get_model_hgqt(init_bw=10, init_int=2):
         iq_conf = QuantizerConfig(place='datalane')
         with QuantizerConfigScope(place='table', homogeneous_axis=(0,)):
             inp = keras.layers.Input((16,))
-            out = keras.layers.BatchNormalization()(inp)
-            out = QDenseT(8, 1, 8, 'tanh', iq_conf=iq_conf)(inp)
+            out = QDenseT(24, 1, 8, 'tanh', iq_conf=iq_conf)(inp)
             out = QDenseT(5, 1, 8, 'tanh')(out)
     return keras.Model(inp, out)

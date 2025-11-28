@@ -55,9 +55,9 @@ if __name__ == '__main__':
     dataset_val = Dataset(X_val, y_val, 33200, 'gpu:0')
 
     if args.model == 'hgqt':
-        model = get_model_hgq(3, 3)
+        model = get_model_hgqt(6, 2)
     else:
-        model = get_model_hgqt(10, 2)
+        model = get_model_hgq(3, 3)
 
     pbar = PBar(
         'loss: {loss:.2f}/{val_loss:.2f} - acc: {accuracy:.4f}/{val_accuracy:.4f} - lr: {learning_rate:.2e} - beta: {beta:.1e}'
@@ -69,15 +69,15 @@ if __name__ == '__main__':
         [1, -1],
         fname_format='epoch={epoch}-val_acc={val_accuracy:.3f}-ebops={ebops}-val_loss={val_loss:.3f}.keras',
     )
-    beta_sched = BetaScheduler(PieceWiseSchedule([(0, 5e-7, 'constant'), (4000, 5e-7, 'log'), (200000, 5e-4, 'constant')]))
+    beta_sched = BetaScheduler(PieceWiseSchedule([(0, 5e-7, 'constant'), (4000, 5e-7, 'log'), (200000, 1e-3, 'constant')]))
     lr_sched = LearningRateScheduler(
-        cosine_decay_restarts_schedule(3e-3, 2000, t_mul=1.0, m_mul=0.94, alpha=1e-6, alpha_steps=50)
+        cosine_decay_restarts_schedule(5e-3, 4000, t_mul=1.0, m_mul=0.94, alpha=1e-6, alpha_steps=50)
     )
     callbacks = [ebops, lr_sched, beta_sched, pbar, pareto]
 
     opt = keras.optimizers.Adam()
     metrics = ['accuracy']
     loss = keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-    model.compile(optimizer=opt, loss=loss, metrics=metrics, steps_per_execution=8)
+    model.compile(optimizer=opt, loss=loss, metrics=metrics, steps_per_execution=32)
 
     model.fit(dataset_train, epochs=200000, validation_data=dataset_val, callbacks=callbacks, verbose=0)  # type: ignore

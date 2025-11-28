@@ -16,7 +16,7 @@ from test_utils import convert_and_test, trace_and_save
 from tqdm import tqdm
 
 
-def worker(model_path: str, args, ds_test_path: str, src: str):
+def worker(model_path: str, args, ds_test_path: str, src: str, latency_cutoff: int = 2, clock_period: float = 1.0):
     (X_train, _), (X_val, _), (X_test, y_test) = get_data(ds_test_path, src=src)
     ds_test = (X_test, y_test)
 
@@ -40,9 +40,9 @@ def worker(model_path: str, args, ds_test_path: str, src: str):
         hls4ml=args.hls4ml,
         hls4ml_da=args.hls4ml_da,
         solver_options={'hard_dc': 2},
-        clock_period=1,
+        clock_period=clock_period,
         clock_uncertainty=0.0,
-        latency_cutoff=1,
+        latency_cutoff=latency_cutoff,
         hw_config=HWConfig(1, -1, -1),
     )
 
@@ -58,6 +58,8 @@ if __name__ == '__main__':
     parser.add_argument('--hls4ml', action='store_true', help='Whether to do hls4ml conversion')
     parser.add_argument('--hls4ml-da', action='store_true', help='Whether to do hls4ml conversion with DA')
     parser.add_argument('--jobs', '-j', type=int, default=-1, help='Number of parallel jobs')
+    parser.add_argument('--latency-cutoff', '-lc', type=int, default=2, help='Latency cutoff for piplining')
+    parser.add_argument('--clock-period', '-cp', type=float, default=1.0, help='Clock period for HW writing')
     args = parser.parse_args()
 
     model_paths = list(Path(args.input).glob('*.keras'))
@@ -65,8 +67,10 @@ if __name__ == '__main__':
         args.jobs = os.cpu_count() or 1
     print(f'Found {len(model_paths)} models, Using {args.jobs} parallel jobs')
 
+    src = 'cernbox' if args.cern_box else 'openml'
+
     def _worker(x):
-        return worker(x, args, args.data, src='cernbox' if args.cern_box else 'openml')
+        return worker(x, args, args.data, src=src, latency_cutoff=args.latency_cutoff, clock_period=args.clock_period)
 
     with Pool(args.jobs) as p:
         list(tqdm(p.imap_unordered(_worker, model_paths), total=len(model_paths)))
