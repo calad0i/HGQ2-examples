@@ -47,11 +47,13 @@ if __name__ == '__main__':
     _models = ['mlp_mixer', 'mlp_mixer_uq1', 'mlp', 'gnn', 'gnn_uq1', 'gnn_t', 'gnn_t_uq1']
     parser.add_argument('--model', '-m', type=str, choices=_models, default='hgq', help='Model type to use')
     parser.add_argument('--ptetaphi', '-3', action='store_true', help='Whether to use only pt, eta, phi features')
+    parser.add_argument('--batch-size', '-bsz', type=int, default=2790, help='Batch size for training')
+    parser.add_argument('--learning-rate', '-lr', type=float, default=3e-3, help='Initial learning rate')
     args = parser.parse_args()
 
     (X_train, y_train), (X_val, y_val), (X_test, y_test) = get_data(args.input, args.n_constituents, args.ptetaphi)
 
-    dataset_train = Dataset(X_train, y_train, 2790, 'gpu:0')
+    dataset_train = Dataset(X_train, y_train, args.batch_size, 'gpu:0')
     dataset_val = Dataset(X_val, y_val, 2790, 'gpu:0')
 
     model = get_model(args.model, 7, 7, 1e-8, args.n_constituents, args.ptetaphi)
@@ -68,7 +70,9 @@ if __name__ == '__main__':
         fname_format='epoch={epoch}-val_acc={val_accuracy:.3f}-ebops={ebops}-val_loss={val_loss:.3f}.keras',
     )
     beta_sched = BetaScheduler(PieceWiseSchedule([(0, 2e-8, 'linear'), (2000, 3e-7, 'log'), (7000, 3.0e-6, 'constant')]))
-    lr_sched = LearningRateScheduler(cosine_decay_restarts_schedule(3e-3, 100, t_mul=1.0, m_mul=1.0, alpha=1e-6, alpha_steps=10))
+    lr_sched = LearningRateScheduler(
+        cosine_decay_restarts_schedule(args.learning_rate, 500, t_mul=1.0, m_mul=1.0, alpha=1e-6, alpha_steps=10)
+    )
     callbacks = [ebops, lr_sched, beta_sched, pbar, pareto]
 
     opt = keras.optimizers.Adam()

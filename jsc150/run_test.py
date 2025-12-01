@@ -79,7 +79,6 @@ if __name__ == '__main__':
 
     if args.jobs == 1:
         for mp in tqdm(model_paths):
-            print(f'Processing model: {mp}')
             worker(mp, args)
     else:
         with Pool(args.jobs) as p:

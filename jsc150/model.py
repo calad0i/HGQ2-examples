@@ -96,7 +96,6 @@ def get_gnn(n_constituents, pt_eta_phi, uq1: bool = False):
 def get_gnn_table(n_constituents, pt_eta_phi, uq1: bool = False):
     N = n_constituents
     n = 3 if pt_eta_phi else 16
-    # heterogeneous_axis = (-2,) if not uq1 else (-2, -1)
     homogeneous_axis = (0,) if not uq1 else (0, 1)
 
     with (
@@ -108,11 +107,11 @@ def get_gnn_table(n_constituents, pt_eta_phi, uq1: bool = False):
 
         pool_scale = 2.0 ** -round(log2(N))
         x = QDenseT(32, batch_norm=True)(inp)
-        s = QDenseT(32, batch_norm=True)(x)
-        d = QDenseT(32, batch_norm=True)(QSum(axes=1, scale=pool_scale, keepdims=True)(x))
+        s = QDenseT(32, batch_norm=False)(x)
+        d = QDenseT(32, batch_norm=False)(QSum(axes=1, scale=pool_scale, keepdims=True)(x))
         x = QAdd()([s, d])
 
-        x = QDenseT(32, batch_norm=True)(x)
+        # x = QDenseT(16, batch_norm=True)(x)
         x = QSum(axes=1, scale=1 / 16, keepdims=False)(x)
 
     with (
@@ -121,9 +120,8 @@ def get_gnn_table(n_constituents, pt_eta_phi, uq1: bool = False):
         QuantizerConfigScope(place='table', homogeneous_axis=(0,)),
     ):
         x = QDenseT(32, batch_norm=True)(x)
-        x = QDenseT(32, batch_norm=True)(x)
-        x = QDenseT(16, batch_norm=True)(x)
-        out = QDenseT(5, batch_norm=True)(x)
+        # x = QDenseT(24, batch_norm=False)(x)
+        out = QDenseT(5, batch_norm=False)(x)
 
     model = keras.Model(inputs=inp, outputs=out)
     return model
