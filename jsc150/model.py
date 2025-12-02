@@ -54,11 +54,11 @@ def get_mlp(n_constituents, pt_eta_phi):
     inp = keras.layers.Input((N, n))
 
     x = keras.layers.Flatten()(inp)
-    x = QEinsumDenseBatchnorm('bc->bC', 64, bias_axes='C', activation='relu', iq_conf=iq_conf)(x)
-    x = QEinsumDenseBatchnorm('bc->bC', 64, bias_axes='C', activation='relu')(x)
-    x = QEinsumDenseBatchnorm('bc->bC', 64, bias_axes='C', activation='relu')(x)
-    x = QEinsumDenseBatchnorm('bc->bC', 64, bias_axes='C', activation='relu')(x)
-    out = QEinsumDenseBatchnorm('bc->bC', 5, bias_axes='C')(x)
+    x = QEinsumDenseBatchnorm('bc,cC->bC', 64, bias_axes='C', activation='relu', iq_conf=iq_conf)(x)
+    x = QEinsumDenseBatchnorm('bc,cC->bC', 64, bias_axes='C', activation='relu')(x)
+    x = QEinsumDenseBatchnorm('bc,cC->bC', 64, bias_axes='C', activation='relu')(x)
+    x = QEinsumDenseBatchnorm('bc,cC->bC', 64, bias_axes='C', activation='relu')(x)
+    out = QEinsumDenseBatchnorm('bc,cC->bC', 5, bias_axes='C')(x)
     model = keras.Model(inputs=inp, outputs=out)
     return model
 
