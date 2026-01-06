@@ -44,7 +44,19 @@ if __name__ == '__main__':
     parser.add_argument('--input', '-i', type=str, required=True, help='Path to the training data file (.h5)')
     parser.add_argument('--output', '-o', type=str, required=True, help='Output directory for saving results')
     parser.add_argument('--n-constituents', '-n', type=int, required=True, help='Number of constituents to use')
-    _models = ['mlp_mixer', 'mlp_mixer_uq1', 'mlp', 'gnn', 'gnn_uq1', 'gnn_t', 'gnn_t_uq1']
+    _models = [
+        'mlp_mixer',
+        'mlp_mixer_uq1',
+        'mlp',
+        'gnn',
+        'gnn_uq1',
+        'gnn_t',
+        'gnn_t_uq1',
+        'gnn_h',
+        'gnn_h_uq1',
+        'gnn_t_l',
+        'gnn_t_l_uq1',
+    ]
     parser.add_argument('--model', '-m', type=str, choices=_models, default='hgq', help='Model type to use')
     parser.add_argument('--ptetaphi', '-3', action='store_true', help='Whether to use only pt, eta, phi features')
     parser.add_argument('--batch-size', '-bsz', type=int, default=2790, help='Batch size for training')
@@ -68,6 +80,7 @@ if __name__ == '__main__':
         ['val_accuracy', 'ebops'],
         [1, -1],
         fname_format='epoch={epoch}-val_acc={val_accuracy:.3f}-ebops={ebops}-val_loss={val_loss:.3f}.keras',
+        enable_if=lambda x: x['val_accuracy'] > 0.5 and x['ebops'] < 3e5,
     )
     beta_sched = BetaScheduler(PieceWiseSchedule([(0, 2e-8, 'linear'), (2000, 3e-7, 'log'), (7000, 3.0e-6, 'constant')]))
     lr_sched = LearningRateScheduler(
@@ -79,5 +92,7 @@ if __name__ == '__main__':
     metrics = ['accuracy']
     loss = keras.losses.SparseCategoricalCrossentropy(from_logits=True)
     model.compile(optimizer=opt, loss=loss, metrics=metrics, steps_per_execution=4)
+
+    print(len(dataset_train))
 
     model.fit(dataset_train, epochs=7000, validation_data=dataset_val, callbacks=callbacks, verbose=0)  # type: ignore

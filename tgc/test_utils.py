@@ -44,19 +44,16 @@ def convert_and_test(
     rtl = RTLModel(
         comb, name, path, latency_cutoff=latency_cutoff, clock_period=clock_period, clock_uncertainty=clock_uncertainty
     )
-    rtl.write()
-
-    with open(path / 'misc.json') as f:
-        misc = json.load(f)
 
     ebops = 0
     for layer in model.layers:
         if getattr(layer, 'enable_ebops', False):
             ebops += int(layer.ebops)  # type: ignore
 
+    misc = {}
     misc['ebops'] = ebops
-    with open(path / 'misc.json', 'w') as f:
-        json.dump(misc, f)
+
+    rtl.write(misc)
 
     if not ds_test:
         return
@@ -66,11 +63,13 @@ def convert_and_test(
     if sw_test:
         y_pred = model.predict(ds_test[0], batch_size=25600, verbose=0)  # type: ignore
         res = metric(y_true, y_pred)
+        y_comb = comb.predict(ds_test[0], n_threads=1)
+        comb_metric = metric(y_true, y_comb)
 
         misc['keras_metric'] = res
+        misc['comb_metric'] = comb_metric
 
-        with open(path / 'misc.json', 'w') as f:
-            json.dump(misc, f)
+        rtl.write(misc)
 
     if hw_test:
         for _ in range(8):
@@ -81,19 +80,12 @@ def convert_and_test(
                 pass
 
         y_pred_hw = rtl.predict(ds_test[0])
-        res_hw = metric(y_true, y_pred_hw)
-
-        misc['hw_metric'] = res_hw
 
         with open(Path(path) / 'misc.json', 'w') as f:
             json.dump(misc, f)
 
         if sw_test:
-            ndiff = np.sum(y_pred_hw != y_pred)  # type: ignore
+            ndiff = np.sum(y_pred_hw != y_comb)  # type: ignore
             if ndiff > 0:
                 print(f'Number of different predictions: {ndiff} / {y_pred.size}')  # type: ignore
-                print(f'HW/SW metrics: {res} / {res_hw}')  # type: ignore
-
-            misc['hw_sw_diff'] = float(ndiff) / float(y_pred.size)  # type: ignore
-            with open(Path(path) / 'misc.json', 'w') as f:
-                json.dump(misc, f)
+                raise RuntimeError('HW and SW predictions do not match!')

@@ -41,7 +41,7 @@ def worker(model_path: str, args, ds_test_path: str):
         solver_options={'hard_dc': 2},
         clock_period=6.25,
         clock_uncertainty=0.0,
-        latency_cutoff=12,  # 11
+        latency_cutoff=16,  # 11
     )
 
 

@@ -7,12 +7,15 @@ import argparse
 import random
 from math import cos, pi
 
+import jax
 import keras
 import numpy as np
 from data import get_data_and_mask
 from hgq.utils.sugar import BetaScheduler, Dataset, FreeEBOPs, ParetoFront, PBar, PieceWiseSchedule
 from keras.callbacks import LearningRateScheduler
-from model import get_model_hgq
+from model import get_model_hgq, get_model_hgq_hybrid, get_model_hgqt
+
+jax.config.update('jax_default_matmul_precision', 'float32')
 
 
 class Resolution(keras.metrics.Metric):
@@ -58,6 +61,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--input', '-i', type=str, required=True, help='Path to the training data file (.h5)')
     parser.add_argument('--output', '-o', type=str, required=True, help='Output directory for saving results')
+    parser.add_argument('--model', '-m', type=str, choices=['hgq', 'hgqt', 'hybrid'], default='hgq', help='Model type to use')
     args = parser.parse_args()
 
     (X_train, y_train), (X_val, y_val), (X_test, y_test), (mask12, mask13, mask23) = get_data_and_mask(args.input)
@@ -67,7 +71,12 @@ if __name__ == '__main__':
     dataset_train = Dataset(X_train, y_train, 51200, 'gpu:0')
     dataset_val = Dataset(X_val, y_val, 51200, 'gpu:0')
 
-    model = get_model_hgq(mask12, mask13, mask23, 8, 8)
+    if args.model == 'hgqt':
+        model = get_model_hgqt(mask12, mask13, mask23, 8, 8)
+    elif args.model == 'hgq':
+        model = get_model_hgq(mask12, mask13, mask23, 8, 8)
+    else:
+        model = get_model_hgq_hybrid(mask12, mask13, mask23, 8, 8)
 
     pbar = PBar('loss: {loss:.2f}/{val_loss:.2f} - res: {res:.2f}/{val_res:.2f} - lr: {learning_rate:.2e} - beta: {beta:.1e}')
     ebops = FreeEBOPs()
@@ -84,5 +93,7 @@ if __name__ == '__main__':
     opt = keras.optimizers.Adam()
     metrics = [Resolution(name='res')]
     model.compile(optimizer=opt, loss='mse', metrics=metrics, steps_per_execution=4)
+
+    print(len(dataset_train))
 
     model.fit(dataset_train, epochs=60000, validation_data=dataset_val, callbacks=callbacks, verbose=0)  # type: ignore

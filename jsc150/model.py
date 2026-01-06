@@ -106,12 +106,12 @@ def get_gnn_table(n_constituents, pt_eta_phi, uq1: bool = False):
         inp = keras.layers.Input((N, n))
 
         pool_scale = 2.0 ** -round(log2(N))
-        x = QDenseT(32, batch_norm=True)(inp)
-        s = QDenseT(32, batch_norm=False)(x)
-        d = QDenseT(32, batch_norm=False)(QSum(axes=1, scale=pool_scale, keepdims=True)(x))
+        x = QDenseT(8, batch_norm=False)(inp)
+        s = QDenseT(8, batch_norm=False)(x)
+        d = QDenseT(8, batch_norm=False)(QSum(axes=1, scale=pool_scale, keepdims=True)(x))
         x = QAdd()([s, d])
 
-        # x = QDenseT(16, batch_norm=True)(x)
+        # x = QDenseT(8, batch_norm=False)(x)
         x = QSum(axes=1, scale=1 / 16, keepdims=False)(x)
 
     with (
@@ -119,8 +119,78 @@ def get_gnn_table(n_constituents, pt_eta_phi, uq1: bool = False):
         QuantizerConfigScope(place='datalane', homogeneous_axis=(0,)),
         QuantizerConfigScope(place='table', homogeneous_axis=(0,)),
     ):
-        x = QDenseT(32, batch_norm=True)(x)
+        x = QDenseT(24, batch_norm=True)(x)
         # x = QDenseT(24, batch_norm=False)(x)
+        out = QDenseT(5, batch_norm=False)(x)
+
+    model = keras.Model(inputs=inp, outputs=out)
+    return model
+
+
+def get_gnn_table_large(n_constituents, pt_eta_phi, uq1: bool = False):
+    N = n_constituents
+    n = 3 if pt_eta_phi else 16
+    homogeneous_axis = (0,) if not uq1 else (0, 1)
+
+    with (
+        QuantizerConfigScope(place=('weight', 'bias'), overflow_mode='SAT_SYM'),
+        QuantizerConfigScope(place='datalane', homogeneous_axis=homogeneous_axis),
+        QuantizerConfigScope(place='table', homogeneous_axis=homogeneous_axis),
+    ):
+        inp = keras.layers.Input((N, n))
+
+        pool_scale = 2.0 ** -round(log2(N))
+        x = QDenseT(32, batch_norm=False)(inp)
+        s = QDenseT(32, batch_norm=False)(x)
+        d = QDenseT(32, batch_norm=False)(QSum(axes=1, scale=pool_scale, keepdims=True)(x))
+        x = QAdd()([s, d])
+
+        x = QDenseT(32, batch_norm=False)(x)
+        x = QSum(axes=1, scale=1 / 16, keepdims=False)(x)
+
+    with (
+        QuantizerConfigScope(place=('weight', 'bias'), overflow_mode='SAT_SYM'),
+        QuantizerConfigScope(place='datalane', homogeneous_axis=(0,)),
+        QuantizerConfigScope(place='table', homogeneous_axis=(0,)),
+    ):
+        x = QDenseT(24, batch_norm=True)(x)
+        # x = QDenseT(24, batch_norm=False)(x)
+        out = QDenseT(5, batch_norm=False)(x)
+
+    model = keras.Model(inputs=inp, outputs=out)
+    return model
+
+
+def get_gnn_hybrid(n_constituents, pt_eta_phi, uq1: bool = False):
+    N = n_constituents
+    n = 3 if pt_eta_phi else 16
+    heterogeneous_axis = None if not uq1 else (-1,)
+    homogeneous_axis = (0,) if not uq1 else (0, -1)
+
+    with (
+        QuantizerConfigScope(place=('weight', 'bias'), overflow_mode='SAT_SYM'),
+        QuantizerConfigScope(place='datalane', heterogeneous_axis=heterogeneous_axis),
+        QuantizerConfigScope(place='table', homogeneous_axis=homogeneous_axis),
+    ):
+        inp = keras.layers.Input((N, n))
+        pos = QuantizerConfig(place='datalane', k0=0)
+
+        pool_scale = 2.0 ** -round(log2(N))
+        x = QEinsumDenseBatchnorm('bnc,cC->bnC', (N, 32), bias_axes='C', activation='relu')(inp)
+        s = QEinsumDenseBatchnorm('bnc,cC->bnC', (N, 16), bias_axes='C', activation='relu')(x)
+        d = QDenseT(16, batch_norm=True, iq_conf=pos)(QSum(axes=1, scale=pool_scale, keepdims=True)(x))
+        x = QAdd()([s, d])
+
+        # x = QEinsumDenseBatchnorm('bnc,cC->bnC', (N, 32), bias_axes='C', activation='relu')(x)
+        x = QDenseT(16, batch_norm=False)(x)
+        x = QSum(axes=1, scale=1 / 16, keepdims=False)(x)
+
+    with (
+        QuantizerConfigScope(place=('weight', 'bias'), overflow_mode='SAT_SYM'),
+        QuantizerConfigScope(place='datalane', homogeneous_axis=(0,)),
+        QuantizerConfigScope(place='table', homogeneous_axis=(0,)),
+    ):
+        x = QDenseT(24, batch_norm=True, iq_conf=None)(x)
         out = QDenseT(5, batch_norm=False)(x)
 
     model = keras.Model(inputs=inp, outputs=out)
@@ -135,6 +205,7 @@ def get_model(model_class, bw_k: int, bw_a: int, l1_reg: float, n_constituents: 
         i0=0,
         fr=MonoL1(l1_reg),
         ir=MonoL1(l1_reg),
+        i_decay_speed=1e-3,
     )
     scope1 = QuantizerConfigScope(
         default_q_type='kif',
@@ -161,6 +232,14 @@ def get_model(model_class, bw_k: int, bw_a: int, l1_reg: float, n_constituents: 
                 model = get_gnn_table(n_constituents, pt_eta_phi)
             case 'gnn_t_uq1':
                 model = get_gnn_table(n_constituents, pt_eta_phi, uq1=True)
+            case 'gnn_t_l':
+                model = get_gnn_table_large(n_constituents, pt_eta_phi)
+            case 'gnn_t_l_uq1':
+                model = get_gnn_table_large(n_constituents, pt_eta_phi, uq1=True)
+            case 'gnn_h':
+                model = get_gnn_hybrid(n_constituents, pt_eta_phi)
+            case 'gnn_h_uq1':
+                model = get_gnn_hybrid(n_constituents, pt_eta_phi, uq1=True)
             case _:
                 raise ValueError(f'Unknown model class: {model_class}')
 

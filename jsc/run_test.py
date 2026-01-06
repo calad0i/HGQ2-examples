@@ -58,7 +58,7 @@ if __name__ == '__main__':
     parser.add_argument('--hls4ml', action='store_true', help='Whether to do hls4ml conversion')
     parser.add_argument('--hls4ml-da', action='store_true', help='Whether to do hls4ml conversion with DA')
     parser.add_argument('--jobs', '-j', type=int, default=-1, help='Number of parallel jobs')
-    parser.add_argument('--latency-cutoff', '-lc', type=int, default=2, help='Latency cutoff for piplining')
+    parser.add_argument('--latency-cutoff', '-lc', type=float, default=2, help='Latency cutoff for piplining')
     parser.add_argument('--clock-period', '-cp', type=float, default=1.0, help='Clock period for HW writing')
     args = parser.parse_args()
 

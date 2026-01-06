@@ -1,8 +1,8 @@
 import keras
 import numpy as np
-from hgq.config import QuantizerConfig, QuantizerConfigScope
+from hgq.config import HardTanhConfig, QuantizerConfig, QuantizerConfigScope
 from hgq.constraints import MinMax
-from hgq.layers import QAdd, QConv1D, QDense, QEinsumDenseBatchnorm
+from hgq.layers import QAdd, QConv1D, QConvT1D, QDense, QDenseT, QEinsumDenseBatchnorm
 from keras import ops
 from keras.layers import Reshape
 
@@ -53,4 +53,74 @@ def get_model_hgq(mask12, mask13, mask23, init_bw_k=8, init_bw_a=8):
         dd3 = QEinsumDenseBatchnorm('bc,cC->bC', 8, name='t3', bias_axes='C', activation='relu')(dd2)
         dd4 = QDense(1, name='theta_out', bias_initializer=keras.initializers.Constant(229))(dd3)  # type: ignore
     model = keras.Model([input_m1, input_m2, input_m3], dd4, name='TGCNN')
+    return model
+
+
+def get_model_hgqt(mask12, mask13, mask23, init_bw_k=8, init_bw_a=8):
+    input_m1 = keras.Input(shape=(50, 3), name='_M1')
+    input_m2 = keras.Input(shape=(50, 2), name='_M2')
+    input_m3 = keras.Input(shape=(50, 2), name='_M3')
+    with (
+        QuantizerConfigScope(place=('weight'), overflow_mode='SAT_SYM', f0=init_bw_k, trainable=True),
+        QuantizerConfigScope(place=('bias'), overflow_mode='WRAP', f0=init_bw_k, trainable=True),
+        QuantizerConfigScope(place='datalane', i0=1, f0=init_bw_a, i_decay_speed=0),
+    ):
+        with QuantizerConfigScope(place='datalane', k0=0, i0=1, f0=0, trainable=False):
+            m1_c = QConvT1D(1, 3, use_bias=False, padding='same')(input_m1)
+            m2_c = QConvT1D(1, 3, use_bias=False, padding='same')(input_m2)
+            m3_c = QConvT1D(1, 3, use_bias=False, padding='same')(input_m3)
+
+        m1_c = Reshape((50,))(m1_c)
+        m2_c = Reshape((50,))(m2_c)
+        m3_c = Reshape((50,))(m3_c)
+
+        hard_tanh_like = QuantizerConfig(
+            place='datalane', k0=1, f0=init_bw_a, trainable=True, ic=MinMax(0, 0), overflow_mode='SAT', heterogeneous_axis=()
+        )
+
+        _m1_o = QDenseT(100, kernel_constraint=None, iq_conf=hard_tanh_like)(m1_c)
+        m1_o, m1_o2 = _m1_o[:, :50], _m1_o[:, 50:]
+        m2_o = QDenseT(50, iq_conf=hard_tanh_like)(QAdd()([m1_o, m2_c]))
+        m3_o = QAdd()([m1_o2, m3_c])
+        m3_o = QAdd()([m2_o, m3_o])
+
+        dd1 = QDenseT(24, name='t1', iq_conf=hard_tanh_like)(m3_o)
+        dd2 = QDenseT(12, name='t2')(dd1)
+        dd4 = QDense(1, name='theta_out', bias_initializer=keras.initializers.Constant(229))(dd2)  # type: ignore
+    model = keras.Model([input_m1, input_m2, input_m3], dd4, name='TGCNN')
+    return model
+
+
+def get_model_hgq_hybrid(mask12, mask13, mask23, init_bw_k=8, init_bw_a=8):
+    input_m1 = keras.Input(shape=(50, 3), name='_M1')
+    input_m2 = keras.Input(shape=(50, 2), name='_M2')
+    input_m3 = keras.Input(shape=(50, 2), name='_M3')
+    with (
+        QuantizerConfigScope(place=('weight'), overflow_mode='SAT_SYM', f0=init_bw_k, trainable=True),
+        QuantizerConfigScope(place=('bias'), overflow_mode='WRAP', f0=init_bw_k, trainable=True),
+        QuantizerConfigScope(place='datalane', i0=1, f0=init_bw_a),
+        QuantizerConfigScope(place='table', homogeneous_axis=(0,)),
+    ):
+        with QuantizerConfigScope(place='datalane', k0=0, i0=1, f0=0, trainable=False, round_mode='TRN'):
+            m1_c = QConv1D(1, 3, use_bias=False, padding='same')(input_m1)
+            m2_c = QConv1D(1, 3, use_bias=False, padding='same')(input_m2)
+            m3_c = QConv1D(1, 3, use_bias=False, padding='same')(input_m3)
+
+        m1_c = Reshape((50,))(m1_c)
+        m2_c = Reshape((50,))(m2_c)
+        m3_c = Reshape((50,))(m3_c)
+
+        hard_tanh_like = HardTanhConfig(f0=init_bw_a, trainable=True, round_mode='TRN')
+        hard_tanh_like_frozen = HardTanhConfig(f0=8, trainable=False, round_mode='TRN')
+
+        _m1_o = QDense(100, kernel_constraint=None, iq_conf=hard_tanh_like)(m1_c)
+        m1_o, m1_o2 = _m1_o[:, :50], _m1_o[:, 50:]
+        m2_o = QDense(50, iq_conf=hard_tanh_like)(QAdd()([m1_o, m2_c]))
+        m3_o = QAdd()([m1_o2, m3_c])
+        m3_o = QAdd(oq_conf=hard_tanh_like_frozen)([m2_o, m3_o])
+
+        out = QDenseT(24, batch_norm=True)(m3_o)
+        out = QDenseT(12, batch_norm=True)(out)
+        out = QDense(1, name='theta_out', bias_initializer=keras.initializers.Constant(229))(out)  # type: ignore
+    model = keras.Model([input_m1, input_m2, input_m3], out, name='TGCNN')
     return model

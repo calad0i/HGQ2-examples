@@ -45,17 +45,19 @@ if __name__ == '__main__':
     parser.add_argument('--output', '-o', type=str, required=True, help='Output directory for saving results')
     parser.add_argument('--cern-box', action='store_true', help='Whether the input data is from CERNBox')
     parser.add_argument('--model', '-m', type=str, choices=['hgq', 'hgqt'], default='hgq', help='Model type to use')
+    parser.add_argument('--batch-size', '-bsz', type=int, default=33200, help='Batch size for training')
+    parser.add_argument('--learning-rate', '-lr', type=float, default=5e-3, help='Initial learning rate')
     args = parser.parse_args()
 
     src = 'openml' if not args.cern_box else 'cernbox'
 
     (X_train, y_train), (X_val, y_val), (X_test, y_test) = get_data(args.input, src=src)
 
-    dataset_train = Dataset(X_train, y_train, 33200, 'gpu:0')
+    dataset_train = Dataset(X_train, y_train, args.batch_size, 'gpu:0')
     dataset_val = Dataset(X_val, y_val, 33200, 'gpu:0')
 
     if args.model == 'hgqt':
-        model = get_model_hgqt(6, 2)
+        model = get_model_hgqt(8, 2)
     else:
         model = get_model_hgq(3, 3)
 
@@ -71,7 +73,7 @@ if __name__ == '__main__':
     )
     beta_sched = BetaScheduler(PieceWiseSchedule([(0, 5e-7, 'constant'), (4000, 5e-7, 'log'), (200000, 1e-3, 'constant')]))
     lr_sched = LearningRateScheduler(
-        cosine_decay_restarts_schedule(5e-3, 4000, t_mul=1.0, m_mul=0.94, alpha=1e-6, alpha_steps=50)
+        cosine_decay_restarts_schedule(args.learning_rate, 4000, t_mul=1.0, m_mul=0.94, alpha=1e-6, alpha_steps=50)
     )
     callbacks = [ebops, lr_sched, beta_sched, pbar, pareto]
 
