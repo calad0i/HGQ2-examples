@@ -78,7 +78,7 @@ def get_model_hgqt(mask12, mask13, mask23, init_bw_k=8, init_bw_a=8):
             place='datalane', k0=1, f0=init_bw_a, trainable=True, ic=MinMax(0, 0), overflow_mode='SAT', heterogeneous_axis=()
         )
 
-        _m1_o = QDenseT(100, kernel_constraint=None, iq_conf=hard_tanh_like)(m1_c)
+        _m1_o = QDenseT(100, iq_conf=hard_tanh_like)(m1_c)
         m1_o, m1_o2 = _m1_o[:, :50], _m1_o[:, 50:]
         m2_o = QDenseT(50, iq_conf=hard_tanh_like)(QAdd()([m1_o, m2_c]))
         m3_o = QAdd()([m1_o2, m3_c])
@@ -86,7 +86,7 @@ def get_model_hgqt(mask12, mask13, mask23, init_bw_k=8, init_bw_a=8):
 
         dd1 = QDenseT(24, name='t1', iq_conf=hard_tanh_like)(m3_o)
         dd2 = QDenseT(12, name='t2')(dd1)
-        dd4 = QDense(1, name='theta_out', bias_initializer=keras.initializers.Constant(229))(dd2)  # type: ignore
+        dd4 = QDenseT(1, name='theta_out')(dd2) + 229  # type: ignore
     model = keras.Model([input_m1, input_m2, input_m3], dd4, name='TGCNN')
     return model
 
