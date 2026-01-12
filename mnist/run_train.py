@@ -44,7 +44,7 @@ if __name__ == '__main__':
 
     (X_train, y_train), (X_val, y_val), (X_test, y_test) = get_data(args.input)
 
-    dataset_train = Dataset(X_train, y_train, 5000, 'gpu:0')
+    dataset_train = Dataset(X_train, y_train, 5000, 'gpu:0', shuffle=True)
     dataset_val = Dataset(X_val, y_val, 5000, 'gpu:0')
 
     model = get_model_hgq(3, 3)

@@ -68,7 +68,7 @@ if __name__ == '__main__':
 
     X_train = [x.astype('float16') for x in X_train]
     X_val = [x.astype('float16') for x in X_val]
-    dataset_train = Dataset(X_train, y_train, 51200, 'gpu:0')
+    dataset_train = Dataset(X_train, y_train, 51200, 'gpu:0', shuffle=True)
     dataset_val = Dataset(X_val, y_val, 51200, 'gpu:0')
 
     if args.model == 'hgqt':

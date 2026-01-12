@@ -65,7 +65,7 @@ if __name__ == '__main__':
 
     (X_train, y_train), (X_val, y_val), (X_test, y_test) = get_data(args.input, args.n_constituents, args.ptetaphi)
 
-    dataset_train = Dataset(X_train, y_train, args.batch_size, 'gpu:0')
+    dataset_train = Dataset(X_train, y_train, args.batch_size, 'gpu:0', shuffle=True)
     dataset_val = Dataset(X_val, y_val, 2790, 'gpu:0')
 
     model = get_model(args.model, 7, 7, 1e-8, args.n_constituents, args.ptetaphi)
