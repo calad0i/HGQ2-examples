@@ -43,7 +43,7 @@ def convert_and_test(
     inp, out = trace_model(model, hwconf=hw_config, solver_options=solver_options)
     comb = comb_trace(inp, out)
     rtl = RTLModel(
-        comb, name, path, latency_cutoff=latency_cutoff, clock_period=clock_period, clock_uncertainty=clock_uncertainty
+        comb, path, name, latency_cutoff=latency_cutoff, clock_period=clock_period, clock_uncertainty=clock_uncertainty
     )
     rtl.write()
 

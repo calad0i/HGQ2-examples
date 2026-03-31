@@ -2,8 +2,18 @@ from math import log2
 
 import keras
 from hgq.config import LayerConfigScope, QuantizerConfig, QuantizerConfigScope
-from hgq.constraints import MinMax
-from hgq.layers import QAdd, QDenseT, QEinsumDense, QEinsumDenseBatchnorm, QSum
+from hgq.constraints import Min, MinMax
+from hgq.layers import (
+    QAdd,
+    QAffinedUnaryFunctionLUT,
+    QDenseT,
+    QEinsumDense,
+    QEinsumDenseBatchnorm,
+    QGlobalAveragePooling1D,
+    QMultiHeadAttention,
+    QSum,
+)
+from hgq.layers.attn import QSALTAttention
 from hgq.regularizers import MonoL1
 
 if keras.backend.backend() == 'jax':
@@ -127,11 +137,17 @@ def get_gnn_table(n_constituents, pt_eta_phi, uq1: bool = False):
     return model
 
 
-def get_gnn_pk(n_constituents, pt_eta_phi, uq1: bool = False):
+@keras.utils.register_keras_serializable()
+class SameDim0(keras.constraints.Constraint):
+    def __call__(self, w):
+        return keras.ops.broadcast_to(keras.ops.mean(w, axis=0, keepdims=True), keras.ops.shape(w))
+
+
+def get_gnn_pk(n_constituents, pt_eta_phi, dim: int = 24, quantizer_only=False):
     N = n_constituents
     n = 3 if pt_eta_phi else 16
-    assert not uq1
     heterogeneous_axis = None
+    kc = SameDim0() if quantizer_only else None
 
     with (
         QuantizerConfigScope(place=('weight', 'bias'), overflow_mode='SAT_SYM'),
@@ -140,22 +156,90 @@ def get_gnn_pk(n_constituents, pt_eta_phi, uq1: bool = False):
         inp = keras.layers.Input((N, n))
 
         pool_scale = 2.0 ** -round(log2(N))
-        x = QEinsumDenseBatchnorm('bnc,ncC->bnC', (N, 24), bias_axes='C', activation='relu')(inp)
-        s = QEinsumDenseBatchnorm('bnc,ncC->bnC', (N, 24), bias_axes='C', activation='relu')(x)
-        d = QEinsumDenseBatchnorm('bnc,ncC->bnC', (1, 24), bias_axes='C', activation='relu')(
+        x = QEinsumDenseBatchnorm('bnc,ncC->bnC', (N, dim), bias_axes='C', activation='relu', kernel_constraint=kc)(inp)
+        s = QEinsumDenseBatchnorm('bnc,ncC->bnC', (N, dim), bias_axes='C', activation='relu', kernel_constraint=kc)(x)
+        d = QEinsumDenseBatchnorm('bnc,ncC->bnC', (1, dim), bias_axes='C', activation='relu', kernel_constraint=kc)(
             QSum(axes=1, scale=pool_scale, keepdims=True)(x)
         )
         x = QAdd()([s, d])
 
-        x = QEinsumDenseBatchnorm('bnc,ncC->bnC', (N, 24), bias_axes='C', activation='relu')(x)
+        x = QEinsumDenseBatchnorm('bnc,ncC->bnC', (N, dim), bias_axes='C', activation='relu', kernel_constraint=kc)(x)
         x = QSum(axes=1, scale=1 / 16, keepdims=False)(x)
-        x = QEinsumDenseBatchnorm('bc,cC->bC', 24, bias_axes='C', activation='relu')(x)
-        x = QEinsumDenseBatchnorm('bc,cC->bC', 24, bias_axes='C', activation='relu')(x)
+        x = QEinsumDenseBatchnorm('bc,cC->bC', min(dim, 64), bias_axes='C', activation='relu')(x)
+        x = QEinsumDenseBatchnorm('bc,cC->bC', min(dim, 32), bias_axes='C', activation='relu')(x)
         x = QEinsumDenseBatchnorm('bc,cC->bC', 16, bias_axes='C', activation='relu')(x)
         out = QEinsumDenseBatchnorm('bc,cC->bC', 5, bias_axes='C')(x)
 
     model = keras.Model(inputs=inp, outputs=out)
     return model
+
+
+def get_transformer(n_constituents, pt_eta_phi, uq1: bool = False):
+    N = n_constituents
+    n = 3 if pt_eta_phi else 16
+    homogeneous_axis = (0,) if not uq1 else (0, 1)
+    h = 2
+    dim = 16
+
+    with (
+        QuantizerConfigScope(place=('weight', 'bias'), overflow_mode='SAT_SYM', b0=4, f0=4),
+        QuantizerConfigScope(place='datalane', homogeneous_axis=homogeneous_axis),
+        QuantizerConfigScope(place='table', homogeneous_axis=homogeneous_axis, bc=Min(4)),
+    ):
+        inp = keras.layers.Input((N, n))
+        # x = QBatchNormalization()(inp)
+        x = QEinsumDenseBatchnorm('...c,cC->...C', 24, bias_axes='C', activation='relu')(inp)
+        # with QuantizerConfigScope(place='datalane', default_q_type='kbi', bc=Min(1)):
+        xa = QAffinedUnaryFunctionLUT('tanh')(x)
+        xa = QMultiHeadAttention(h, 16, dropout=0.0)(xa, xa)
+
+        x = QAdd()([x, xa])
+        xf = xa = QAffinedUnaryFunctionLUT('tanh')(x)
+        xf = QEinsumDenseBatchnorm('...c,cC->...C', dim * h, bias_axes='C', activation='relu')(xf)
+        xf = QEinsumDense('...c,cC->...C', 24)(xf)
+        # xf = Dropout(0.05)(xf)
+        x = QAdd()([x, xf])
+
+        out = QGlobalAveragePooling1D()(x)
+        out = QEinsumDenseBatchnorm('...c,cC->...C', 32, bias_axes='C', activation='relu')(out)
+        out = QEinsumDenseBatchnorm('...c,cC->...C', 32, bias_axes='C', activation='relu')(out)
+        out = QEinsumDenseBatchnorm('...c,cC->...C', 32, bias_axes='C', activation='relu')(out)
+        out = QEinsumDense('...c,cC->...C', 5)(out)
+        model = keras.models.Model(inp, out)
+        return model
+
+
+def get_salt(n_constituents, pt_eta_phi, uq1: bool = False):
+    N = n_constituents
+    n = 3 if pt_eta_phi else 16
+    homogeneous_axis = (0,) if not uq1 else (0, 1)
+    h = 2
+    dim = 16
+
+    with (
+        QuantizerConfigScope(place=('weight', 'bias'), overflow_mode='SAT_SYM'),
+        QuantizerConfigScope(place='datalane', homogeneous_axis=homogeneous_axis),
+        QuantizerConfigScope(place='table', homogeneous_axis=homogeneous_axis),
+    ):
+        inp = keras.layers.Input((N, n))
+        # x = QBatchNormalization()(inp)
+        x = QEinsumDenseBatchnorm('...c,cC->...C', 24, bias_axes='C', activation='relu')(inp)
+
+        xa = QSALTAttention(h, 16, 8, conv_size=5, dropout=0.0)(x, x)
+
+        x = QAdd()([x, xa])
+        xf = QEinsumDenseBatchnorm('...c,cC->...C', dim * h, bias_axes='C', activation='relu')(x)
+        xf = QEinsumDense('...c,cC->...C', 24)(xf)
+        # xf = Dropout(0.05)(xf)
+        x = QAdd()([x, xf])
+
+        out = QGlobalAveragePooling1D()(x)
+        out = QEinsumDenseBatchnorm('...c,cC->...C', 32, bias_axes='C', activation='relu')(out)
+        out = QEinsumDenseBatchnorm('...c,cC->...C', 32, bias_axes='C', activation='relu')(out)
+        out = QEinsumDenseBatchnorm('...c,cC->...C', 32, bias_axes='C', activation='relu')(out)
+        out = QEinsumDense('...c,cC->...C', 5)(out)
+        model = keras.models.Model(inp, out)
+        return model
 
 
 def get_model(model_class, bw_k: int, bw_a: int, l1_reg: float, n_constituents: int, pt_eta_phi: bool):
@@ -194,7 +278,13 @@ def get_model(model_class, bw_k: int, bw_a: int, l1_reg: float, n_constituents: 
             case 'gnn_t_uq1':
                 model = get_gnn_table(n_constituents, pt_eta_phi, uq1=True)
             case 'gnn_pk':
-                model = get_gnn_pk(n_constituents, pt_eta_phi)
+                model = get_gnn_pk(n_constituents, pt_eta_phi, 64)
+            case 'gnn_pkq':
+                model = get_gnn_pk(n_constituents, pt_eta_phi, 64, True)
+            case 'xfm':
+                model = get_transformer(n_constituents, pt_eta_phi)
+            case 'salt':
+                model = get_salt(n_constituents, pt_eta_phi)
             case _:
                 raise ValueError(f'Unknown model class: {model_class}')
 

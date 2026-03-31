@@ -13,6 +13,7 @@ import keras
 import numpy as np
 from da4ml.trace import HWConfig
 from data import get_data
+from model import SameDim0
 from test_utils import convert_and_test, trace_and_save
 from tqdm import tqdm
 
@@ -21,17 +22,19 @@ def worker(
     model_path: str | Path,
     args,
 ):
-    (X_train, _), (X_val, _), (X_test, y_test) = get_data(args.data, args.n_constituents, args.ptetaphi)
+    (X_train, _), (X_val, _), (X_test, y_test) = get_data(args.data, args.n_constituents, args.features == 3)
     ds_test = (X_test, y_test)
 
     out_path = Path(args.output) / Path(model_path).stem
     out_path.mkdir(parents=True, exist_ok=True)
 
     if not (out_path / 'model.keras').exists():
-        model: keras.Model = keras.models.load_model(model_path, compile=False)  # type: ignore
+        model: keras.Model = keras.models.load_model(model_path, compile=False, custom_objects={'SameDim0': SameDim0})  # type: ignore
         trace_and_save(model, out_path / 'model.keras', X_train, X_val, verbose=args.verbose)
     else:
-        model: keras.Model = keras.models.load_model(out_path / 'model.keras', compile=False)  # type: ignore
+        model: keras.Model = keras.models.load_model(
+            out_path / 'model.keras', compile=False, custom_objects={'SameDim0': SameDim0}
+        )  # type: ignore
 
     convert_and_test(
         model,
@@ -65,7 +68,7 @@ if __name__ == '__main__':
     parser.add_argument('--jobs', '-j', type=int, default=-1, help='Number of parallel jobs')
     parser.add_argument('--latency-cutoff', '-lc', type=int, default=2, help='Latency cutoff for piplining')
     parser.add_argument('--clock-period', '-cp', type=float, default=1.0, help='Clock period for HW writing')
-    parser.add_argument('--ptetaphi', action='store_true', help='Whether to use only pt, eta, phi features')
+    parser.add_argument('--features', '-f', choices=[3, 16], type=int, default=16, help='Number of input features (3 or 16)')
     parser.add_argument('--verbose', '-v', action='store_true', help='Whether to print verbose output')
     args = parser.parse_args()
 
