@@ -23,5 +23,5 @@ def get_model_hgqt(init_bw=10, init_int=2):
         with QuantizerConfigScope(place='table', homogeneous_axis=(0,)):
             inp = keras.layers.Input((16,))
             out = QDenseT(20, batch_norm=True)(inp)
-            out = QDenseT(5, batch_norm=False)(inp)
+            out = QDenseT(5, batch_norm=False)(out)
     return keras.Model(inp, out)
