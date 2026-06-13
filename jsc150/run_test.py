@@ -6,12 +6,12 @@ os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.99'
 # os.environ['JAX_PLATFORM_NAME'] = 'cpu'
 
 import argparse
-from multiprocessing import Pool
+from multiprocessing import Pool, set_start_method
 from pathlib import Path
 
 import keras
 import numpy as np
-from da4ml.trace import HWConfig
+from alkaid.trace import HWConfig
 from data import get_data
 from model import SameDim0
 from test_utils import convert_and_test, trace_and_save
@@ -80,6 +80,7 @@ if __name__ == '__main__':
     def _worker(x):
         return worker(x, args)
 
+    set_start_method('fork')
     if args.jobs == 1:
         for mp in tqdm(model_paths):
             worker(mp, args)

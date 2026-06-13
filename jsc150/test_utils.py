@@ -5,10 +5,10 @@ from typing import Any
 
 import keras
 import numpy as np
-from da4ml.codegen import RTLModel
-from da4ml.converter import trace_model
-from da4ml.trace import HWConfig, comb_trace
-from da4ml.typing import solver_options_t
+from alkaid.codegen import RTLModel
+from alkaid.converter import trace_model
+from alkaid.trace import HWConfig, trace
+from alkaid.typing import solver_options_t
 from hgq.utils import trace_minmax
 
 
@@ -46,7 +46,7 @@ def convert_and_test(
         print(f'Converting model and writing to {path}...')
     path.parent.mkdir(parents=True, exist_ok=True)
     inp, out = trace_model(model, hwconf=hw_config, solver_options=solver_options, verbose=verbose)
-    comb = comb_trace(inp, out)
+    comb = trace(inp, out)
     rtl = RTLModel(
         comb, path, name, latency_cutoff=latency_cutoff, clock_period=clock_period, clock_uncertainty=clock_uncertainty
     )
@@ -99,7 +99,7 @@ def convert_and_test(
             except RuntimeError:
                 pass
 
-        y_pred_hw = rtl.predict(np.array(ds_test[0]))
+        y_pred_hw = rtl.predict(np.array(ds_test[0], dtype=np.float32))
         metric_hw = metric(y_true, y_pred_hw)
 
         misc['hw_metric'] = metric_hw
