@@ -10,7 +10,7 @@ from math import cos, pi
 import keras
 import numpy as np
 from data import get_data
-from hgq.utils.sugar import BetaScheduler, Dataset, FreeEBOPs, ParetoFront, PBar, PieceWiseSchedule
+from hgq.utils.sugar import BetaScheduler, Dataset, FreeEBOPs, ParetoFront, PBar, PieceWiseSchedule, StopIf
 from keras.callbacks import LearningRateScheduler
 from model import get_model
 
@@ -57,6 +57,8 @@ if __name__ == '__main__':
         'gnn_uq1',
         'gnn_t',
         'gnn_t_uq1',
+        'xfmt',
+        'xfmt_uq1',
     ]
     parser.add_argument('--model', '-m', type=str, choices=_models, default='hgq', help='Model type to use')
     parser.add_argument(
@@ -83,13 +85,14 @@ if __name__ == '__main__':
         ['val_accuracy', 'ebops'],
         [1, -1],
         fname_format='epoch={epoch}-val_acc={val_accuracy:.3f}-train_acc={accuracy:.3f}-ebops={ebops}-val_loss={val_loss:.3f}.keras',
-        enable_if=lambda x: x['val_accuracy'] > 0.5 and x['ebops'] < 3e5,
+        enable_if=lambda x: x['val_accuracy'] > 0.5 and x['ebops'] < 5e5,
     )
     beta_sched = BetaScheduler(PieceWiseSchedule([(0, 2e-8, 'linear'), (2000, 3e-7, 'log'), (7000, 3.0e-6, 'constant')]))
+    stop = StopIf(lambda x: x['ebops'] < 1e4)
     lr_sched = LearningRateScheduler(
         cosine_decay_restarts_schedule(args.learning_rate, 500, t_mul=1.0, m_mul=1.0, alpha=1e-6, alpha_steps=10)
     )
-    callbacks = [ebops, lr_sched, beta_sched, pbar, pareto]
+    callbacks = [ebops, lr_sched, beta_sched, pbar, pareto, stop]
 
     opt = keras.optimizers.Adam()
     metrics = ['accuracy']

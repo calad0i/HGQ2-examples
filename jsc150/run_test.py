@@ -30,7 +30,7 @@ def worker(
 
     if not (out_path / 'model.keras').exists():
         model: keras.Model = keras.models.load_model(model_path, compile=False, custom_objects={'SameDim0': SameDim0})  # type: ignore
-        trace_and_save(model, out_path / 'model.keras', X_train, X_val, verbose=args.verbose)
+        trace_and_save(model, out_path / 'model.keras', X_train, X_val, verbose=args.verbose, no_growth=args.no_growth)
     else:
         model: keras.Model = keras.models.load_model(
             out_path / 'model.keras', compile=False, custom_objects={'SameDim0': SameDim0}
@@ -70,6 +70,7 @@ if __name__ == '__main__':
     parser.add_argument('--clock-period', '-cp', type=float, default=1.0, help='Clock period for HW writing')
     parser.add_argument('--features', '-f', choices=[3, 16], type=int, default=16, help='Number of input features (3 or 16)')
     parser.add_argument('--verbose', '-v', action='store_true', help='Whether to print verbose output')
+    parser.add_argument('--no-growth', action='store_true', help='Whether to force no bitwidth increase in trace_minmax')
     args = parser.parse_args()
 
     model_paths = list(Path(args.input).glob('*.keras'))

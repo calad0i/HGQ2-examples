@@ -10,6 +10,7 @@ from hgq.layers import (
     QEinsumDense,
     QEinsumDenseBatchnorm,
     QGlobalAveragePooling1D,
+    QLinformerAttentionT,
     QMultiHeadAttention,
     QSum,
 )
@@ -209,6 +210,37 @@ def get_transformer(n_constituents, pt_eta_phi, uq1: bool = False):
         return model
 
 
+def get_llformer(n_constituents, pt_eta_phi, uq1: bool = False):
+    N = n_constituents
+    n = 3 if pt_eta_phi else 16
+    homogeneous_axis = (0,) if not uq1 else (0, 1)
+    h = 1
+    d = 16
+
+    with (
+        QuantizerConfigScope(place='all', br=None, fr=None),
+        QuantizerConfigScope(place=('weight', 'bias'), overflow_mode='SAT_SYM', b0=3, f0=5),
+        QuantizerConfigScope(place='datalane', homogeneous_axis=homogeneous_axis, f0=8),
+        QuantizerConfigScope(place='table', homogeneous_axis=homogeneous_axis, bc=Min(0)),
+    ):
+        inp = keras.layers.Input((N, n))
+        x = QDenseT(d, batch_norm=True)(inp)
+        with QuantizerConfigScope(place='table', homogeneous_axis=homogeneous_axis, bc=Min(1)):
+            # xa = QMultiHeadAttentionT(h, d, dropout=0.0)(x, x)
+            xa = QLinformerAttentionT(h, 4, d, dropout=0.0)(x, x)
+
+        xa = xf = QAdd()([x, xa])
+        xf = QDenseT(d, batch_norm=True)(xf)
+        xf = QDenseT(d, batch_norm=True)(xf)
+        x = QAdd()([xa, xf])
+
+        out = QGlobalAveragePooling1D()(x)
+        out = QDenseT(d, batch_norm=True)(out)
+        out = QDenseT(5, batch_norm=False)(out)
+        model = keras.models.Model(inp, out)
+        return model
+
+
 def get_salt(n_constituents, pt_eta_phi, uq1: bool = False):
     N = n_constituents
     n = 3 if pt_eta_phi else 16
@@ -283,6 +315,10 @@ def get_model(model_class, bw_k: int, bw_a: int, l1_reg: float, n_constituents: 
                 model = get_gnn_pk(n_constituents, pt_eta_phi, 64, True)
             case 'xfm':
                 model = get_transformer(n_constituents, pt_eta_phi)
+            case 'xfmt':
+                model = get_llformer(n_constituents, pt_eta_phi)
+            case 'xfmt_uq1':
+                model = get_llformer(n_constituents, pt_eta_phi, True)
             case 'salt':
                 model = get_salt(n_constituents, pt_eta_phi)
             case _:
